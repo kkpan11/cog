@@ -9,6 +9,8 @@ import (
 	"path"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -33,6 +35,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	_ = os.Remove(bundledSchemaFile)
 	_ = os.Remove(bundledSchemaPy)
 
+	var cogBaseImageName string
+
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
 		if err != nil {
@@ -53,6 +57,13 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}()
 		generator.SetUseCudaBaseImage(useCudaBaseImage)
 		generator.SetUseCogBaseImage(useCogBaseImage)
+
+		if generator.IsUsingCogBaseImage() {
+			cogBaseImageName, err = generator.BaseImage()
+			if err != nil {
+				return fmt.Errorf("Failed to get cog base image name: %s", err)
+			}
+		}
 
 		if separateWeights {
 			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
@@ -156,6 +167,36 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		global.LabelNamespace + "has_init": "true",
 	}
 
+	if cogBaseImageName != "" {
+		labels[global.LabelNamespace+"cog-base-image-name"] = cogBaseImageName
+
+		ref, err := name.ParseReference(cogBaseImageName)
+		if err != nil {
+			return fmt.Errorf("Failed to parse cog base image reference: %w", err)
+		}
+
+		img, err := remote.Image(ref)
+		if err != nil {
+			return fmt.Errorf("Failed to fetch cog base image: %w", err)
+		}
+
+		manifest, err := img.Manifest()
+		if err != nil {
+			return fmt.Errorf("Failed to get manifest for cog base image: %w", err)
+		}
+
+		if len(manifest.Layers) == 0 {
+			return fmt.Errorf("Cog base image has no layers: %s", cogBaseImageName)
+		}
+
+		lastLayerIndex := len(manifest.Layers) - 1
+		lastLayer := manifest.Layers[lastLayerIndex].Digest.String()
+		console.Debugf("Last layer of the cog base image: %s", lastLayer)
+
+		labels[global.LabelNamespace+"cog-base-image-last-layer-sha"] = lastLayer
+		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
+	}
+
 	if isGitRepo(dir) {
 		if commit, err := gitHead(dir); commit != "" && err == nil {
 			labels["org.opencontainers.image.revision"] = commit
@@ -170,7 +211,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	if err := docker.BuildAddLabelsAndSchemaToImage(dir, imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
+	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil

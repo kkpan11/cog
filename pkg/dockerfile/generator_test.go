@@ -180,7 +180,8 @@ COPY . /src`
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 
-	require.Equal(t, `torch==2.3.0
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.3.0
 pandas==1.2.0.12`, string(requirements))
 }
 
@@ -487,7 +488,7 @@ COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
-func TestGenerateFullCPUWithCogBaseImage(t *testing.T) {
+func TestGeneratePythonCPUWithCogBaseImage(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
@@ -498,7 +499,6 @@ build:
     - cowsay
   python_version: "3.12"
   python_packages:
-    - torch==2.3.0
     - pandas==1.2.0.12
   run:
     - "cowsay moo"
@@ -514,7 +514,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:python3.12-torch2.3.0
+FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
@@ -534,7 +534,9 @@ COPY . /src`
 func TestGenerateFullGPUWithCogBaseImage(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	conf, err := config.FromYAML([]byte(`
+	torchVersions := []string{"2.3", "2.3.0", "2.3.1"}
+	for _, torchVersion := range torchVersions {
+		yaml := fmt.Sprintf(`
 build:
   gpu: true
   cuda: "11.8"
@@ -542,23 +544,24 @@ build:
     - ffmpeg
     - cowsay
   python_packages:
-    - torch==2.3.0
+    - torch==%s
     - pandas==2.0.3
   run:
     - "cowsay moo"
 predict: predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+`, torchVersion)
+		conf, err := config.FromYAML([]byte(yaml))
+		require.NoError(t, err)
+		require.NoError(t, conf.ValidateAndComplete(""))
 
-	gen, err := NewGenerator(conf, tmpDir)
-	require.NoError(t, err)
-	gen.SetUseCogBaseImage(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
-	require.NoError(t, err)
+		gen, err := NewGenerator(conf, tmpDir)
+		require.NoError(t, err)
+		gen.SetUseCogBaseImage(true)
+		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+		require.NoError(t, err)
 
-	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.0
+		expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
@@ -569,9 +572,10 @@ EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
-	require.Equal(t, expected, actual)
+		require.Equal(t, expected, actual)
 
-	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
-	require.NoError(t, err)
-	require.Equal(t, "pandas==2.0.3", string(requirements))
+		requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+		require.NoError(t, err)
+		require.Equal(t, "pandas==2.0.3", string(requirements))
+	}
 }

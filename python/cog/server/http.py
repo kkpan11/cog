@@ -16,7 +16,6 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
     Optional,
     TypeVar,
 )
@@ -48,6 +47,7 @@ from ..predictor import (
     load_config,
     load_slim_predictor_from_ref,
 )
+from ..types import CogConfig
 from .runner import (
     PredictionRunner,
     RunnerBusyError,
@@ -100,7 +100,7 @@ def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> N
 
 
 def create_app(
-    config: Dict[str, Any],
+    config: CogConfig,
     shutdown_event: Optional[threading.Event],
     threads: int = 1,
     upload_url: Optional[str] = None,
@@ -484,6 +484,13 @@ def _cpu_count() -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
+        "--host",
+        dest="host",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind to",
+    )
+    parser.add_argument(
         "--threads",
         dest="threads",
         type=int,
@@ -539,6 +546,8 @@ if __name__ == "__main__":
         mode=args.mode,
     )
 
+    host: str = args.host
+
     port = int(os.getenv("PORT", 5000))
     if is_port_in_use(port):
         log.error(f"Port {port} is already in use")
@@ -546,7 +555,7 @@ if __name__ == "__main__":
 
     server_config = uvicorn.Config(
         app,
-        host="0.0.0.0",
+        host=host,
         port=port,
         log_config=None,
         # This is the default, but to be explicit: only run a single worker

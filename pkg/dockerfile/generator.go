@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/util/console"
@@ -72,8 +73,9 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
 		return nil, err
 	}
-	// tmpDir ends up being something like dir/.cog/tmp/build123456789
-	tmpDir, err := os.MkdirTemp(rootTmp, "build")
+	// tmpDir ends up being something like dir/.cog/tmp/build20240620123456.000000
+	now := time.Now().Format("20060102150405.000000")
+	tmpDir, err := os.MkdirTemp(rootTmp, "build"+now)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +107,12 @@ func (g *Generator) SetUseCogBaseImage(useCogBaseImage bool) {
 	g.useCogBaseImage = useCogBaseImage
 }
 
+func (g *Generator) IsUsingCogBaseImage() bool {
+	return g.useCogBaseImage
+}
+
 func (g *Generator) generateInitialSteps() (string, error) {
-	baseImage, err := g.baseImage()
+	baseImage, err := g.BaseImage()
 	if err != nil {
 		return "", err
 	}
@@ -246,16 +252,31 @@ func (g *Generator) Cleanup() error {
 	return nil
 }
 
-func (g *Generator) baseImage() (string, error) {
+func (g *Generator) BaseImage() (string, error) {
 	if g.useCogBaseImage {
-		cudaVersion := g.Config.Build.CUDA
-		pythonVersion := g.Config.Build.PythonVersion
+		var changed bool
 		var err error
-		pythonVersion, err = stripPatchVersion(pythonVersion)
+
+		cudaVersion := g.Config.Build.CUDA
+
+		pythonVersion := g.Config.Build.PythonVersion
+		pythonVersion, changed, err = stripPatchVersion(pythonVersion)
 		if err != nil {
 			return "", err
 		}
+		if changed {
+			console.Warnf("Stripping patch version from Python version %s to %s", g.Config.Build.PythonVersion, pythonVersion)
+		}
+
 		torchVersion, _ := g.Config.TorchVersion()
+		torchVersion, changed, err = stripPatchVersion(torchVersion)
+		if err != nil {
+			return "", err
+		}
+		if changed {
+			console.Warnf("Stripping patch version from Torch version %s to %s", g.Config.Build.PythonVersion, pythonVersion)
+		}
+
 		// validate that the base image configuration exists
 		imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion)
 		if err != nil {
@@ -554,11 +575,18 @@ func (g *Generator) GenerateWeightsManifest() (*weights.Manifest, error) {
 	return m, nil
 }
 
-func stripPatchVersion(versionString string) (string, error) {
-	v, err := version.NewVersion(versionString)
-	if err != nil {
-		return "", fmt.Errorf("Invalid version: %s", versionString)
+func stripPatchVersion(versionString string) (string, bool, error) {
+	if versionString == "" {
+		return "", false, nil
 	}
 
-	return fmt.Sprintf("%d.%d", v.Major, v.Minor), nil
+	v, err := version.NewVersion(versionString)
+	if err != nil {
+		return "", false, fmt.Errorf("Invalid version: %s", versionString)
+	}
+
+	strippedVersion := fmt.Sprintf("%d.%d", v.Major, v.Minor)
+	changed := strippedVersion != versionString
+
+	return strippedVersion, changed, nil
 }
