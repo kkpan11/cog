@@ -719,3 +719,14 @@ build:
 	_, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
 }
+
+func TestConfigMarshal(t *testing.T) {
+	cfg := DefaultConfig()
+	data, err := yaml.Marshal(cfg)
+	require.NoError(t, err)
+	require.Equal(t, `build:
+  python_version: "3.12"
+  fast: false
+predict: ""
+`, string(data))
+}

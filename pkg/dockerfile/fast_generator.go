@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -54,7 +55,7 @@ func NewFastGenerator(config *config.Config, dir string, dockerCommand command.C
 	}, nil
 }
 
-func (g *FastGenerator) GenerateInitialSteps() (string, error) {
+func (g *FastGenerator) GenerateInitialSteps(ctx context.Context) (string, error) {
 	return "", errors.New("GenerateInitialSteps not supported in FastGenerator")
 }
 
@@ -66,19 +67,19 @@ func (g *FastGenerator) Cleanup() error {
 	return nil
 }
 
-func (g *FastGenerator) GenerateDockerfileWithoutSeparateWeights() (string, error) {
-	return g.generate()
+func (g *FastGenerator) GenerateDockerfileWithoutSeparateWeights(ctx context.Context) (string, error) {
+	return g.generate(ctx)
 }
 
-func (g *FastGenerator) GenerateModelBase() (string, error) {
+func (g *FastGenerator) GenerateModelBase(ctx context.Context) (string, error) {
 	return "", errors.New("GenerateModelBase not supported in FastGenerator")
 }
 
-func (g *FastGenerator) GenerateModelBaseWithSeparateWeights(imageName string) (weightsBase string, dockerfile string, dockerignoreContents string, err error) {
+func (g *FastGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Context, imageName string) (weightsBase string, dockerfile string, dockerignoreContents string, err error) {
 	return "", "", "", errors.New("GenerateModelBaseWithSeparateWeights not supported in FastGenerator")
 }
 
-func (g *FastGenerator) GenerateWeightsManifest() (*weights.Manifest, error) {
+func (g *FastGenerator) GenerateWeightsManifest(ctx context.Context) (*weights.Manifest, error) {
 	return nil, errors.New("GenerateWeightsManifest not supported in FastGenerator")
 }
 
@@ -141,14 +142,14 @@ func (g *FastGenerator) BuildContexts() (map[string]string, error) {
 	}, nil
 }
 
-func (g *FastGenerator) generate() (string, error) {
+func (g *FastGenerator) generate(ctx context.Context) (string, error) {
 	err := g.validateConfig()
 	if err != nil {
 		return "", err
 	}
 
 	// Always pull latest monobase as we rely on it for build logic
-	if err := g.dockerCommand.Pull(MONOBASE_IMAGE); err != nil {
+	if _, err := g.dockerCommand.Pull(ctx, MONOBASE_IMAGE, true); err != nil {
 		return "", err
 	}
 
@@ -172,7 +173,7 @@ func (g *FastGenerator) generate() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	aptTarFile, err := g.generateAptTarball(tmpAptDir)
+	aptTarFile, err := g.generateAptTarball(ctx, tmpAptDir)
 	if err != nil {
 		return "", fmt.Errorf("generate apt tarball: %w", err)
 	}
@@ -226,9 +227,9 @@ func (g *FastGenerator) generate() (string, error) {
 
 func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]string, error) {
 	var envs []string
+
 	envs = append(envs, []string{
-		// This installs latest version of coglet
-		"ENV R8_COG_VERSION=coglet",
+		"ENV R8_COG_VERSION=" + CogletVersionFromEnvironment(),
 	}...)
 
 	if g.Config.Build.GPU {
@@ -424,6 +425,14 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 }
 
 func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
+	line, err := envLineFromConfig(g.Config)
+	if err != nil {
+		return nil, err
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+
 	return append(lines, []string{
 		"WORKDIR /src",
 		"ENV VERBOSE=0",
@@ -432,8 +441,8 @@ func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
 	}...), nil
 }
 
-func (g *FastGenerator) generateAptTarball(tmpDir string) (string, error) {
-	return docker.CreateAptTarball(tmpDir, g.dockerCommand, g.Config.Build.SystemPackages...)
+func (g *FastGenerator) generateAptTarball(ctx context.Context, tmpDir string) (string, error) {
+	return docker.CreateAptTarball(ctx, tmpDir, g.dockerCommand, g.Config.Build.SystemPackages...)
 }
 
 func (g *FastGenerator) validateConfig() error {

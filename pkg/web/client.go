@@ -21,6 +21,7 @@ import (
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 const (
@@ -109,6 +110,10 @@ type VersionErrors struct {
 	Title  string         `json:"title"`
 }
 
+type VersionCreate struct {
+	Version string `json:"version"`
+}
+
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 	return &Client{
 		dockerCommand: dockerCommand,
@@ -150,7 +155,7 @@ func (c *Client) PostPushStart(ctx context.Context, pushID string, buildTime tim
 }
 
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) error {
-	version, err := c.versionFromManifest(image, weights, files, fileChallenges)
+	version, err := c.versionFromManifest(ctx, image, weights, files, fileChallenges)
 	if err != nil {
 		return util.WrapError(err, "failed to build new version from manifest")
 	}
@@ -175,10 +180,10 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return err
 	}
 	defer resp.Body.Close()
+	decoder := json.NewDecoder(resp.Body)
 
 	if resp.StatusCode != http.StatusCreated {
 		if resp.StatusCode == http.StatusBadRequest {
-			decoder := json.NewDecoder(resp.Body)
 			var versionErrors VersionErrors
 			err = decoder.Decode(&versionErrors)
 			if err != nil {
@@ -189,11 +194,18 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
 
+	var versionCreate VersionCreate
+	err = decoder.Decode(&versionCreate)
+	if err != nil {
+		return err
+	}
+	console.Infof("New Version: %s", versionCreate.Version)
+
 	return nil
 }
 
-func (c *Client) versionFromManifest(image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) (*Version, error) {
-	manifest, err := c.dockerCommand.Inspect(image)
+func (c *Client) versionFromManifest(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) (*Version, error) {
+	manifest, err := c.dockerCommand.Inspect(ctx, image)
 	if err != nil {
 		return nil, util.WrapError(err, "failed to inspect docker image")
 	}

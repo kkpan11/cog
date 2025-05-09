@@ -9,6 +9,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
@@ -33,7 +34,7 @@ func NewBaseImageRootCommand() (*cobra.Command, error) {
 				console.SetLevel(console.DebugLevel)
 			}
 			cmd.SilenceUsage = true
-			if err := update.DisplayAndCheckForRelease(); err != nil {
+			if err := update.DisplayAndCheckForRelease(cmd.Context()); err != nil {
 				console.Debugf("%s", err)
 			}
 		},
@@ -87,7 +88,7 @@ func newBaseImageDockerfileCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			dockerfile, err := generator.GenerateDockerfile()
+			dockerfile, err := generator.GenerateDockerfile(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -108,11 +109,15 @@ func newBaseImageBuildCommand() *cobra.Command {
 		Use:   "build",
 		Short: "Build Cog base image",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			dockerClient := docker.NewDockerCommand()
+
 			generator, err := baseImageGeneratorFromFlags()
 			if err != nil {
 				return err
 			}
-			dockerfileContents, err := generator.GenerateDockerfile()
+			dockerfileContents, err := generator.GenerateDockerfile(ctx)
 			if err != nil {
 				return err
 			}
@@ -123,8 +128,16 @@ func newBaseImageBuildCommand() *cobra.Command {
 			}
 			baseImageName := dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion)
 
-			err = docker.Build(cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp, dockercontext.StandardBuildDirectory, nil)
-			if err != nil {
+			buildOpts := command.ImageBuildOptions{
+				WorkingDir:         cwd,
+				DockerfileContents: dockerfileContents,
+				ImageName:          baseImageName,
+				NoCache:            buildNoCache,
+				ProgressOutput:     buildProgressOutput,
+				Epoch:              &config.BuildSourceEpochTimestamp,
+				ContextDir:         dockercontext.StandardBuildDirectory,
+			}
+			if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 				return err
 			}
 			fmt.Println("Successfully built image: " + baseImageName)

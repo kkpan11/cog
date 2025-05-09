@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/env"
+	cogHttp "github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/web"
 	"github.com/replicate/cog/pkg/weights"
@@ -24,7 +25,9 @@ func TestPush(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/models/username/modelname/versions":
+			output := "{\"version\":\"user/test:53c740f17ce88a61c3da5b0c20e48fd48e2da537c3a1276dec63ab11fbad6bcb\"}"
 			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(output))
 		case "/api/models/file-challenge":
 			w.WriteHeader(http.StatusOK)
 			body, _ := json.Marshal(web.FileChallenge{
@@ -69,9 +72,11 @@ func TestPush(t *testing.T) {
 
 	// Setup mock docker command
 	command := dockertest.NewMockCommand()
+	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
+	require.NoError(t, err)
 
 	// Run fast push
-	err = Push("r8.im/username/modelname", true, dir, command, BuildInfo{})
+	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{}, client)
 	require.NoError(t, err)
 }
 
@@ -80,7 +85,9 @@ func TestPushWithWeight(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/models/username/modelname/versions":
+			output := "{\"version\":\"user/test:53c740f17ce88a61c3da5b0c20e48fd48e2da537c3a1276dec63ab11fbad6bcb\"}"
 			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(output))
 		case "/api/models/file-challenge":
 			w.WriteHeader(http.StatusOK)
 			body, _ := json.Marshal(web.FileChallenge{
@@ -138,8 +145,10 @@ func TestPushWithWeight(t *testing.T) {
 
 	// Setup mock docker command
 	command := dockertest.NewMockCommand()
+	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
+	require.NoError(t, err)
 
 	// Run fast push
-	err = Push("r8.im/username/modelname", true, dir, command, BuildInfo{})
+	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{}, client)
 	require.NoError(t, err)
 }

@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +20,9 @@ import (
 func TestPostNewVersion(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		output := "{\"version\":\"user/test:53c740f17ce88a61c3da5b0c20e48fd48e2da537c3a1276dec63ab11fbad6bcb\"}"
 		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(output))
 	}))
 	defer server.Close()
 	url, err := url.Parse(server.URL)
@@ -42,8 +43,7 @@ func TestPostNewVersion(t *testing.T) {
 	command := dockertest.NewMockCommand()
 
 	client := NewClient(command, http.DefaultClient)
-	ctx := context.Background()
-	err = client.PostNewVersion(ctx, "r8.im/user/test", []File{}, []File{}, nil)
+	err = client.PostNewVersion(t.Context(), "r8.im/user/test", []File{}, []File{}, nil)
 	require.NoError(t, err)
 }
 
@@ -61,7 +61,7 @@ func TestVersionFromManifest(t *testing.T) {
 	dockertest.MockOpenAPISchema = "{\"test\": true}"
 
 	client := NewClient(command, http.DefaultClient)
-	version, err := client.versionFromManifest("r8.im/user/test", []File{}, []File{}, nil)
+	version, err := client.versionFromManifest(t.Context(), "r8.im/user/test", []File{}, []File{}, nil)
 	require.NoError(t, err)
 
 	var openAPISchema map[string]any
@@ -152,8 +152,7 @@ func TestDoFileChallenge(t *testing.T) {
 	// Setup mock command
 	command := dockertest.NewMockCommand()
 	client := NewClient(command, http.DefaultClient)
-	ctx := context.Background()
-	response, err := client.InitiateAndDoFileChallenge(ctx, weights, files)
+	response, err := client.InitiateAndDoFileChallenge(t.Context(), weights, files)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, response, []FileChallengeAnswer{
 		{

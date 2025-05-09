@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +25,9 @@ func TestFastPush(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/models/username/modelname/versions":
+			output := "{\"version\":\"user/test:53c740f17ce88a61c3da5b0c20e48fd48e2da537c3a1276dec63ab11fbad6bcb\"}"
 			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(output))
 		case "/api/models/file-challenge":
 			w.WriteHeader(http.StatusOK)
 			body, _ := json.Marshal(web.FileChallenge{
@@ -70,13 +71,13 @@ func TestFastPush(t *testing.T) {
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
-	client, err := r8HTTP.ProvideHTTPClient(command)
+	client, err := r8HTTP.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 	webClient := web.NewClient(command, client)
 	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
+	err = FastPush(t.Context(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }
 
@@ -85,7 +86,9 @@ func TestFastPushWithWeight(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/models/username/modelname/versions":
+			output := "{\"version\":\"user/test:53c740f17ce88a61c3da5b0c20e48fd48e2da537c3a1276dec63ab11fbad6bcb\"}"
 			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(output))
 		case "/api/models/file-challenge":
 			w.WriteHeader(http.StatusOK)
 			body, _ := json.Marshal(web.FileChallenge{
@@ -143,12 +146,12 @@ func TestFastPushWithWeight(t *testing.T) {
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
-	client, err := r8HTTP.ProvideHTTPClient(command)
+	client, err := r8HTTP.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 	webClient := web.NewClient(command, client)
 	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
+	err = FastPush(t.Context(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }
