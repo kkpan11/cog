@@ -397,7 +397,7 @@ def test_predict_with_fast_build_with_local_image(docker_image, cog_binary):
         handle.write("\0")
 
     build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--x-fast", "--x-localimage"],
+        [cog_binary, "build", "-t", docker_image, "--x-localimage"],
         cwd=project_dir,
         capture_output=True,
     )
@@ -407,7 +407,6 @@ def test_predict_with_fast_build_with_local_image(docker_image, cog_binary):
             cog_binary,
             "predict",
             docker_image,
-            "--x-fast",
             "--x-localimage",
             "--debug",
             "-i",
@@ -550,7 +549,7 @@ def test_predict_fast_build(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/fast-build"
 
     result = subprocess.run(
-        [cog_binary, "predict", "--x-fast", "-i", "s=world"],
+        [cog_binary, "predict", "-i", "s=world"],
         cwd=project_dir,
         capture_output=True,
         text=True,
@@ -598,3 +597,22 @@ def test_predict_complex_types_list(docker_image, cog_binary):
     )
     assert result.returncode == 0
     assert result.stdout == "Content: Hi There-I am a test\n"
+
+
+def test_predict_tensorflow_project(docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/tensorflow-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "2.10.0\n"

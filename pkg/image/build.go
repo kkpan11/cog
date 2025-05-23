@@ -166,7 +166,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		schemaJSON = data
 	} else {
 		console.Info("Validating model schema...")
-		schema, err := GenerateOpenAPISchema(ctx, imageName, cfg.Build.GPU)
+		schema, err := GenerateOpenAPISchema(ctx, dockerCommand, imageName, cfg.Build.GPU)
 		if err != nil {
 			return fmt.Errorf("Failed to get type signature: %w", err)
 		}
@@ -205,19 +205,25 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
-	pipFreeze, err := GeneratePipFreeze(ctx, imageName, fastFlag)
+	pipFreeze, err := GeneratePipFreeze(ctx, dockerCommand, imageName, fastFlag)
 	if err != nil {
 		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
 
+	modelDependencies, err := GenerateModelDependencies(ctx, dockerCommand, imageName, cfg)
+	if err != nil {
+		return fmt.Errorf("Failed to generate model dependencies from image: %w", err)
+	}
+
 	labels := map[string]string{
-		command.CogVersionLabelKey:               global.Version,
-		command.CogConfigLabelKey:                string(bytes.TrimSpace(configJSON)),
-		global.LabelNamespace + "openapi_schema": string(schemaJSON),
-		global.LabelNamespace + "pip_freeze":     pipFreeze,
+		command.CogVersionLabelKey:           global.Version,
+		command.CogConfigLabelKey:            string(bytes.TrimSpace(configJSON)),
+		command.CogOpenAPISchemaLabelKey:     string(schemaJSON),
+		global.LabelNamespace + "pip_freeze": pipFreeze,
 		// Mark the image as having an appropriate init entrypoint. We can use this
 		// to decide how/if to shim the image.
-		global.LabelNamespace + "has_init": "true",
+		global.LabelNamespace + "has_init":   "true",
+		command.CogModelDependenciesLabelKey: modelDependencies,
 	}
 
 	if cogBaseImageName != "" {
@@ -271,7 +277,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		labels[key] = val
 	}
 
-	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, imageName, labels, bundledSchemaFile); err != nil {
+	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, imageName, labels, bundledSchemaFile, progressOutput); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil
@@ -280,7 +286,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 // BuildAddLabelsAndSchemaToImage builds a cog model with labels and schema.
 //
 // The new image is based on the provided image with the labels and schema file appended to it.
-func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, image string, labels map[string]string, bundledSchemaFile string) error {
+func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) error {
 	dockerfile := "FROM " + image + "\n"
 	dockerfile += "COPY " + bundledSchemaFile + " .cog\n"
 
@@ -288,6 +294,7 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 		DockerfileContents: dockerfile,
 		ImageName:          image,
 		Labels:             labels,
+		ProgressOutput:     progressOutput,
 	}
 
 	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
